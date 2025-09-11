@@ -411,6 +411,87 @@ export default function CopilotKitPage() {
   }, [defaultDataFor, setState]);
 
   useCopilotAction({
+    name: "setPlan",
+    description: "Initialize a multi-step plan and mark it in progress.",
+    available: "remote",
+    parameters: [
+      { name: "steps", type: "string[]", required: true, description: "Ordered list of step titles." },
+    ],
+    handler: ({ steps }: { steps: string[] }) => {
+      const normalized: PlanStep[] = (steps ?? []).map((t) => ({ title: String(t), status: "pending" } as PlanStep));
+      if (normalized.length > 0) {
+        normalized[0] = { ...normalized[0], status: "in_progress" } as PlanStep;
+      }
+      setState((prev) => {
+        const base = (prev ?? initialState) as AgentState;
+        return {
+          ...base,
+          planSteps: normalized,
+          currentStepIndex: normalized.length > 0 ? 0 : -1,
+          planStatus: normalized.length > 0 ? "in_progress" : "",
+        } as AgentState;
+      });
+    },
+  });
+
+  useCopilotAction({
+    name: "updatePlanProgress",
+    description: "Update a single plan step's status and optional note.",
+    available: "remote",
+    parameters: [
+      { name: "step_index", type: "number", required: true, description: "0-based step index." },
+      { name: "status", type: "string", required: true, description: "One of: pending, in_progress, completed, blocked, failed." },
+      { name: "note", type: "string", required: false, description: "Optional note for the step." },
+    ],
+    handler: ({ step_index, status, note }: { step_index: number; status: string; note?: string }) => {
+      const allowed = new Set(["pending", "in_progress", "completed", "blocked", "failed"]);
+      const nextStatus: PlanStep["status"] = allowed.has(status) ? (status as PlanStep["status"]) : "pending";
+      setState((prev) => {
+        const base = (prev ?? initialState) as AgentState;
+        const steps = (base.planSteps ?? []) as PlanStep[];
+        if (!Array.isArray(steps) || steps.length === 0) return base;
+        const idx = Math.max(0, Math.min(step_index, steps.length - 1));
+        const updated = steps.map((s, i) => (i === idx ? ({ ...s, status: nextStatus, note } as PlanStep) : s));
+        // derive current step index: first in_progress else next pending else -1
+        let current = -1;
+        for (let i = 0; i < updated.length; i++) {
+          if (updated[i].status === "in_progress") { current = i; break; }
+        }
+        if (current === -1) {
+          for (let i = 0; i < updated.length; i++) {
+            if (updated[i].status === "pending") { current = i; break; }
+          }
+        }
+        const allDone = updated.length > 0 && updated.every((s) => s.status === "completed");
+        const anyFailed = updated.some((s) => s.status === "failed");
+        const planStatus = allDone ? "completed" : anyFailed ? "failed" : "in_progress";
+        return { ...base, planSteps: updated, currentStepIndex: current, planStatus } as AgentState;
+      });
+    },
+  });
+
+  useCopilotAction({
+    name: "completePlan",
+    description: "Mark the plan as completed and finalize all steps.",
+    available: "remote",
+    parameters: [],
+    handler: () => {
+      setState((prev) => {
+        const base = (prev ?? initialState) as AgentState;
+        const steps = ((base.planSteps ?? []) as PlanStep[]).map((s) => ({ ...s, status: "completed" } as PlanStep));
+        return { ...base, planSteps: steps, planStatus: steps.length > 0 ? "completed" : "", currentStepIndex: -1 } as AgentState;
+      });
+    },
+  });
+
+  useCopilotAdditionalInstructions({
+    instructions: [
+      "PLANNING: For non-trivial tasks, first call setPlan with step titles before other actions.",
+      "Then, call updatePlanProgress as steps start/complete. When done, call completePlan.",
+    ].join("\n"),
+  });
+
+  useCopilotAction({
     name: "setGlobalTitle",
     description: "Set the global title/name (outside of items).",
     available: "remote",
