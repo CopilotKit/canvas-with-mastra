@@ -148,6 +148,7 @@ export default function CopilotKitPage() {
       const items = viewState.items ?? initialState.items;
       const gTitle = viewState.globalTitle ?? "";
       const gDesc = viewState.globalDescription ?? "";
+      const stateJson = JSON.stringify(getStatePreviewJSON(viewState));
       const summary = items
         .slice(0, 5)
         .map((p: Item) => `id=${p.id} • name=${p.name} • type=${p.type}`)
@@ -190,6 +191,13 @@ export default function CopilotKitPage() {
         summary || "(none)",
         fieldSchema,
         toolUsageHints,
+        "CONFLICT RESOLUTION:",
+        "- The JSON block below is the authoritative, most recent state. If it conflicts with memory/chat history, treat the JSON as correct.",
+        "- Never invent fields or items not present in the JSON. Use tools to change state, then re-read.",
+        "STATE_JSON:",
+        "```json",
+        stateJson,
+        "```",
       ].join("\n");
     })(),
   });
