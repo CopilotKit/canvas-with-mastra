@@ -36,10 +36,11 @@ export const canvasAgent = new Agent({
   instructions: "You are a helpful assistant managing a canvas of items. Prefer shared state over chat history.",
   memory: new Memory({
     options: {
-      workingMemory: {
-        enabled: true,
-        schema: AgentState,
-      },
+      // Disable working memory to prevent stale cached state from overriding UI changes
+      workingMemory: { enabled: false },
+      // Keep conversational context but avoid long-term recall to reduce drift
+      lastMessages: 10,
+      semanticRecall: false,
     },
   }),
 });

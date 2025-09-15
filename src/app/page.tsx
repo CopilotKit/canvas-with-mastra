@@ -178,6 +178,7 @@ export default function CopilotKitPage() {
         "- Checklist edits accept either the generated id (e.g., '001') or a numeric index (e.g., '1', 1-based).",
         "- For charts, values are clamped to [0..100]; use clearChartField1Value to clear an existing metric value.",
         "- Card subtitle/description keywords (description, overview, summary, caption, blurb) map to setItemSubtitleOrDescription. Never write these to data.field1 for non-note items.",
+        "- BEFORE REASONING: Call getStateSnapshot and treat its result as the single source of truth.",
         "LOOP CONTROL: When asked to 'add a couple' items, add at most 2 and stop. Avoid repeated calls to the same mutating tool in one turn.",
         "RANDOMIZATION: If the user specifically asks for random/mock values, you MAY generate and set them right away using the tools (do not block for more details).",
         "VERIFICATION: After tools run, re-read the latest state and confirm what actually changed.",
@@ -200,6 +201,15 @@ export default function CopilotKitPage() {
         "```",
       ].join("\n");
     })(),
+  });
+
+  // Expose a read-only tool that returns the current authoritative state
+  useCopilotAction({
+    name: "getStateSnapshot",
+    description: "Return the exact current state (authoritative).",
+    available: "remote",
+    parameters: [],
+    handler: () => getStatePreviewJSON(viewState),
   });
 
   useLangGraphInterrupt({
@@ -556,7 +566,9 @@ export default function CopilotKitPage() {
       { name: "itemId", type: "string", required: true, description: "Target item id." },
     ],
     handler: ({ value, itemId }: { value: string; itemId: string }) => {
-      const safeValue = String((value as unknown as string) ?? "");
+      const safeValue = String((value as unknown as string) ?? "").trim();
+      const allowed = new Set(["Option A", "Option B", "Option C", ""]);
+      if (!allowed.has(safeValue)) return "invalid_select_value";
       updateItemData(itemId, (prev) => {
         const anyPrev = prev as { field2?: string };
         if (typeof anyPrev.field2 === "string") {
@@ -745,10 +757,13 @@ export default function CopilotKitPage() {
       { name: "itemId", type: "string", required: true, description: "Target item id (entity)." },
     ],
     handler: ({ value, itemId }: { value: string; itemId: string }) => {
+      const safeValue = String((value as unknown as string) ?? "").trim();
+      const allowed = new Set(["Option A", "Option B", "Option C", ""]);
+      if (!allowed.has(safeValue)) return "invalid_select_value";
       updateItemData(itemId, (prev) => {
         const anyPrev = prev as { field2?: string };
         if (typeof anyPrev.field2 === "string") {
-          return { ...anyPrev, field2: value } as ItemData;
+          return { ...anyPrev, field2: safeValue } as ItemData;
         }
         return prev;
       });
@@ -766,8 +781,11 @@ export default function CopilotKitPage() {
     handler: ({ tag, itemId }: { tag: string; itemId: string }) => {
       updateItemData(itemId, (prev) => {
         const e = prev as EntityData;
+        const options = ((e.field3_options ?? []) as string[]).map((t) => String(t));
+        const normalized = String(tag);
+        if (!options.includes(normalized)) return e; // ignore invalid tag
         const current = new Set<string>((e.field3 ?? []) as string[]);
-        current.add(tag);
+        current.add(normalized);
         return { ...e, field3: Array.from(current) } as EntityData;
       });
     },
